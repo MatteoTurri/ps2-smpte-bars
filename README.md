@@ -43,11 +43,24 @@ checking sync/geometry.
 
 ## Controls
 
+It boots into a **menu** listing every resolution; pick one to show the bars.
+
+**Menu**
+
 | Button | Action |
 |---|---|
-| D-Pad ◀ / ▶ (or L1 / R1) | Previous / next video mode |
+| D-Pad ▲ / ▼ | Move selection |
+| L1 / R1 | Page up / down |
+| ✕ (Cross) | Apply selected resolution → bars |
+| △ (Triangle) | Jump to the safe **480i NTSC** mode (blind recovery) |
+
+**Bars**
+
+| Button | Action |
+|---|---|
 | ✕ (Cross) | Cycle level preset |
 | Select | Show/hide the text HUD |
+| ○ (Circle) / Start | Back to the menu |
 | △ (Triangle) | Jump back to the safe **480i NTSC** mode (blind recovery) |
 
 ### Level presets

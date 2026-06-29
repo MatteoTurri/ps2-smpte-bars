@@ -4,6 +4,10 @@
  * Displays full-intensity SMPTE colour bars at every output mode the GS can
  * drive, so you can calibrate the per-channel gain of a RetroTink 4K (or any
  * scaler) at each resolution the PlayStation 2 can produce.
+ *
+ * Two views:
+ *   MENU  - scrollable list to pick a resolution.
+ *   BARS  - the colour bars in the selected mode, with an optional HUD.
  */
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +23,13 @@
 
 #include "video_modes.h"
 #include "smpte.h"
+
+/* Approximate height in pixels of a FontM glyph at scale 1.0. All on-screen
+ * text is sized relative to this so it stays consistent across resolutions.
+ * If text looks globally too big/small on real hardware, tweak this one value. */
+#define FONTM_GLYPH_H 32.0f
+
+enum { VIEW_MENU, VIEW_BARS };
 
 static GSGLOBAL *gsGlobal;
 static GSFONTM  *gsFontM;
@@ -77,31 +88,101 @@ static void apply_mode(int idx)
     gsKit_fontm_upload(gsGlobal, gsFontM);
 }
 
-/* ------------------------------------------------------------------ frame */
-
-static void draw_frame(int mode_idx, int level_idx, int show_hud)
+/* How many menu rows fit on screen in the current mode. */
+static int menu_visible(void)
 {
-    const VideoMode  *m   = &g_modes[mode_idx];
-    const LevelPreset *lvl = &g_levels[level_idx];
+    float lineH = gsGlobal->Height * 0.06f;
+    int v = (int)((gsGlobal->Height * 0.90f - gsGlobal->Height * 0.18f) / lineH);
+    if (v < 1) v = 1;
+    if (v > g_mode_count) v = g_mode_count;
+    return v;
+}
 
-    /* Clear to the floor level so any letterboxing matches black. */
+/* ------------------------------------------------------------------ views */
+
+static void draw_menu(int cursor, int active, int level_idx)
+{
+    int   W = gsGlobal->Width;
+    int   H = gsGlobal->Height;
+    float lineH   = H * 0.06f;
+    float scale   = lineH / FONTM_GLYPH_H;
+    float listTop = H * 0.18f;
+    int   visible = menu_visible();
+    int   start, i;
+
+    u64 cBg    = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00);
+    u64 cTitle = GS_SETREG_RGBAQ(0x80, 0xC0, 0xFF, 0x80, 0x00);
+    u64 cDim   = GS_SETREG_RGBAQ(0x70, 0x70, 0x70, 0x80, 0x00);
+    u64 cSel   = GS_SETREG_RGBAQ(0xFF, 0xFF, 0xFF, 0x80, 0x00);
+    u64 cFoot  = GS_SETREG_RGBAQ(0x55, 0x55, 0x55, 0x80, 0x00);
+
+    start = cursor - visible / 2;
+    if (start > g_mode_count - visible) start = g_mode_count - visible;
+    if (start < 0) start = 0;
+
+    gsKit_clear(gsGlobal, cBg);
+
+    gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f, H * 0.06f, 2,
+                             scale * 1.1f, cTitle,
+                             "SMPTE 100% Color Bars - select resolution");
+
+    for (i = 0; i < visible; i++) {
+        int  idx = start + i;
+        char row[96];
+        char cur  = (idx == cursor) ? '>' : ' ';
+        char mark = (idx == active) ? '*' : ' ';
+        u64  col  = (idx == cursor) ? cSel : cDim;
+
+        snprintf(row, sizeof(row), "%c%c %s", cur, mark, g_modes[idx].name);
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f,
+                                 listTop + i * lineH, 2, scale, col, row);
+    }
+
+    if (start > 0)
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.90f, listTop, 2,
+                                 scale, cDim, "^");
+    if (start + visible < g_mode_count)
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.90f,
+                                 listTop + (visible - 1) * lineH, 2, scale, cDim, "v");
+
+    {
+        char foot[96];
+        snprintf(foot, sizeof(foot),
+                 "Up/Down move   L1/R1 page   X select   ('*' = active)");
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f, H * 0.93f, 2,
+                                 scale * 0.85f, cFoot, foot);
+    }
+
+    gsKit_queue_exec(gsGlobal);
+    gsKit_sync_flip(gsGlobal);
+}
+
+static void draw_bars(int active, int level_idx, int show_hud)
+{
+    const VideoMode   *m   = &g_modes[active];
+    const LevelPreset *lvl = &g_levels[level_idx];
+    int W = gsGlobal->Width;
+    int H = gsGlobal->Height;
+
     u64 floor_col = GS_SETREG_RGBAQ(lvl->floor, lvl->floor, lvl->floor, 0x80, 0x00);
     gsKit_clear(gsGlobal, floor_col);
 
     smpte_draw(gsGlobal, lvl);
 
     if (show_hud) {
-        char line1[80];
-        char line2[80];
-        u64 hud_col = GS_SETREG_RGBAQ(0x40, 0x40, 0x40, 0x80, 0x00);
+        float lineH = H * 0.05f;
+        float scale = lineH / FONTM_GLYPH_H;
+        u64   col   = GS_SETREG_RGBAQ(0x60, 0x60, 0x60, 0x80, 0x00);
+        char  l1[80], l2[80];
 
-        snprintf(line1, sizeof(line1), "[%d/%d] %s",
-                 mode_idx + 1, g_mode_count, m->name);
-        snprintf(line2, sizeof(line2), "%s | %s (peak %d / floor %d)",
-                 m->signal, lvl->name, lvl->peak, lvl->floor);
+        snprintf(l1, sizeof(l1), "[%d/%d] %s", active + 1, g_mode_count, m->name);
+        snprintf(l2, sizeof(l2), "%s | %s | O=menu  X=levels  Select=HUD",
+                 m->signal, lvl->name);
 
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, 24.0f, 20.0f, 2, 0.5f, hud_col, line1);
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, 24.0f, 48.0f, 2, 0.5f, hud_col, line2);
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.04f, H * 0.05f, 2,
+                                 scale, col, l1);
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.04f, H * 0.05f + lineH, 2,
+                                 scale, col, l2);
     }
 
     gsKit_queue_exec(gsGlobal);
@@ -114,25 +195,25 @@ int main(int argc, char *argv[])
 {
     struct padButtonStatus buttons;
     u32 old_pad = 0;
-    int mode_idx  = g_default_mode;
+    int view      = VIEW_MENU;
+    int active    = g_default_mode;   /* currently applied GS mode  */
+    int cursor    = g_default_mode;   /* menu highlight             */
     int level_idx = 0;
     int show_hud  = 1;
-    int redraw    = 2;   /* frames left to render (covers both buffers) */
+    int redraw    = 2;                /* frames left to draw (both buffers) */
 
     load_pad_modules();
     pad_init();
 
-    /* GS + DMA bring-up. */
     gsGlobal = gsKit_init_global();
     dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
                 D_CTRL_STD_OFF, D_CTRL_RCYC_8, 1 << DMA_CHANNEL_GIF);
     dmaKit_chan_init(DMA_CHANNEL_GIF);
 
-    /* Embedded font: unpack once into RAM; upload happens per mode switch. */
     gsFontM = gsKit_init_fontm();
     gsKit_fontm_unpack(gsFontM);
 
-    apply_mode(mode_idx);
+    apply_mode(active);
 
     for (;;) {
         u32 pressed = 0;
@@ -143,32 +224,71 @@ int main(int argc, char *argv[])
             old_pad = paddata;
         }
 
-        if (pressed & (PAD_RIGHT | PAD_R1)) {
-            mode_idx = (mode_idx + 1) % g_mode_count;
-            apply_mode(mode_idx);
-            redraw = 2;
-        }
-        if (pressed & (PAD_LEFT | PAD_L1)) {
-            mode_idx = (mode_idx - 1 + g_mode_count) % g_mode_count;
-            apply_mode(mode_idx);
-            redraw = 2;
-        }
-        if (pressed & PAD_TRIANGLE) {              /* blind-recover to safe mode */
-            mode_idx = g_default_mode;
-            apply_mode(mode_idx);
-            redraw = 2;
-        }
-        if (pressed & PAD_CROSS) {                 /* cycle level preset */
-            level_idx = (level_idx + 1) % g_level_count;
-            redraw = 2;
-        }
-        if (pressed & PAD_SELECT) {                /* toggle HUD text */
-            show_hud = !show_hud;
-            redraw = 2;
+        if (view == VIEW_MENU) {
+            int page = menu_visible();
+
+            if (pressed & PAD_DOWN) {
+                cursor = (cursor + 1) % g_mode_count;
+                redraw = 2;
+            }
+            if (pressed & PAD_UP) {
+                cursor = (cursor - 1 + g_mode_count) % g_mode_count;
+                redraw = 2;
+            }
+            if (pressed & PAD_R1) {
+                cursor += page;
+                if (cursor > g_mode_count - 1) cursor = g_mode_count - 1;
+                redraw = 2;
+            }
+            if (pressed & PAD_L1) {
+                cursor -= page;
+                if (cursor < 0) cursor = 0;
+                redraw = 2;
+            }
+            if (pressed & PAD_CROSS) {              /* apply selection */
+                if (cursor != active) {
+                    active = cursor;
+                    apply_mode(active);
+                }
+                view = VIEW_BARS;
+                redraw = 2;
+            }
+            if (pressed & PAD_TRIANGLE) {           /* blind-recover safe mode */
+                active = g_default_mode;
+                cursor = active;
+                apply_mode(active);
+                view = VIEW_BARS;
+                redraw = 2;
+            }
+        } else { /* VIEW_BARS */
+            if (pressed & PAD_CROSS) {              /* cycle level preset */
+                level_idx = (level_idx + 1) % g_level_count;
+                redraw = 2;
+            }
+            if (pressed & PAD_SELECT) {             /* toggle HUD */
+                show_hud = !show_hud;
+                redraw = 2;
+            }
+            if (pressed & (PAD_CIRCLE | PAD_START)) { /* back to menu */
+                cursor = active;
+                view = VIEW_MENU;
+                redraw = 2;
+            }
+            if (pressed & PAD_TRIANGLE) {           /* blind-recover safe mode */
+                if (active != g_default_mode) {
+                    active = g_default_mode;
+                    apply_mode(active);
+                }
+                cursor = active;
+                redraw = 2;
+            }
         }
 
         if (redraw > 0) {
-            draw_frame(mode_idx, level_idx, show_hud);
+            if (view == VIEW_MENU)
+                draw_menu(cursor, active, level_idx);
+            else
+                draw_bars(active, level_idx, show_hud);
             redraw--;
         }
     }
