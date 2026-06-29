@@ -24,6 +24,25 @@
 #include "video_modes.h"
 #include "smpte.h"
 
+/* Bounded vsync wait — overrides gsKit's own symbol.
+ *
+ * gsKit_vsync_wait() in the library spins forever on the GS vsync flag:
+ *     *GS_CSR = *GS_CSR & 8;  while(!(*GS_CSR & 8));
+ * If a video mode never produces a vsync (observed with 576p on some
+ * consoles/BIOSes), that bit is never set and the EE hangs hard — even when
+ * the wait happens deep inside gsKit_init_screen, so nothing can recover and
+ * even Triangle is dead. gsKit is archived one-function-per-object, so defining
+ * the symbol here makes the linker use this bounded version everywhere: normal
+ * modes still exit on the real vsync immediately, but a non-syncing mode gives
+ * up after a timeout instead of locking the machine. */
+#define VSYNC_TIMEOUT 0x800000
+void gsKit_vsync_wait(void)
+{
+    u32 t = 0;
+    *GS_CSR = *GS_CSR & 8;
+    while (!(*GS_CSR & 8) && ++t < VSYNC_TIMEOUT) { }
+}
+
 /* FontM renders a fixed 26x26 monospace cell at scale 1.0: both the per-glyph
  * X advance and the line height are 26*scale pixels. We size text by *width*
  * (how many columns must fit), so a line of N characters always spans the same
