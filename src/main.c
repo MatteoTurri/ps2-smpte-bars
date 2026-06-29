@@ -24,10 +24,14 @@
 #include "video_modes.h"
 #include "smpte.h"
 
-/* Approximate height in pixels of a FontM glyph at scale 1.0. All on-screen
- * text is sized relative to this so it stays consistent across resolutions.
- * If text looks globally too big/small on real hardware, tweak this one value. */
-#define FONTM_GLYPH_H 32.0f
+/* FontM renders a fixed 26x26 monospace cell at scale 1.0: both the per-glyph
+ * X advance and the line height are 26*scale pixels. We size text by *width*
+ * (how many columns must fit), so a line of N characters always spans the same
+ * fraction of the screen in every resolution and can never overflow the edge. */
+#define FONTM_CELL 26.0f
+#define MENU_COLS  40.0f   /* design width: 40 chars span ~92% of the screen */
+#define HUD_COLS   44.0f
+#define TEXT_MARGIN 0.04f  /* left/right margin as a fraction of width        */
 
 enum { VIEW_MENU, VIEW_BARS };
 
@@ -88,11 +92,24 @@ static void apply_mode(int idx)
     gsKit_fontm_upload(gsGlobal, gsFontM);
 }
 
+/* Text scale so that `cols` characters fit within the usable width. */
+static float scale_for_cols(float cols)
+{
+    float usable = gsGlobal->Width * (1.0f - 2.0f * TEXT_MARGIN);
+    return usable / (FONTM_CELL * cols);
+}
+
+static float menu_line_h(void)
+{
+    return FONTM_CELL * scale_for_cols(MENU_COLS);
+}
+
 /* How many menu rows fit on screen in the current mode. */
 static int menu_visible(void)
 {
-    float lineH = gsGlobal->Height * 0.06f;
-    int v = (int)((gsGlobal->Height * 0.90f - gsGlobal->Height * 0.18f) / lineH);
+    float top = gsGlobal->Height * 0.18f;
+    float bot = gsGlobal->Height * 0.90f;
+    int v = (int)((bot - top) / menu_line_h());
     if (v < 1) v = 1;
     if (v > g_mode_count) v = g_mode_count;
     return v;
@@ -104,8 +121,9 @@ static void draw_menu(int cursor, int active, int level_idx)
 {
     int   W = gsGlobal->Width;
     int   H = gsGlobal->Height;
-    float lineH   = H * 0.06f;
-    float scale   = lineH / FONTM_GLYPH_H;
+    float x       = W * TEXT_MARGIN;
+    float scale   = scale_for_cols(MENU_COLS);
+    float lineH   = menu_line_h();
     float listTop = H * 0.18f;
     int   visible = menu_visible();
     int   start, i;
@@ -122,36 +140,32 @@ static void draw_menu(int cursor, int active, int level_idx)
 
     gsKit_clear(gsGlobal, cBg);
 
-    gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f, H * 0.06f, 2,
-                             scale * 1.1f, cTitle,
-                             "SMPTE 100% Color Bars - select resolution");
+    float ax = W * (1.0f - TEXT_MARGIN) - FONTM_CELL * scale; /* scroll arrow x */
+
+    gsKit_fontm_print_scaled(gsGlobal, gsFontM, x, H * 0.06f, 2,
+                             scale, cTitle, "SMPTE 100% Color Bars");
 
     for (i = 0; i < visible; i++) {
         int  idx = start + i;
-        char row[96];
+        char row[64];
         char cur  = (idx == cursor) ? '>' : ' ';
         char mark = (idx == active) ? '*' : ' ';
         u64  col  = (idx == cursor) ? cSel : cDim;
 
         snprintf(row, sizeof(row), "%c%c %s", cur, mark, g_modes[idx].name);
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f,
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, x,
                                  listTop + i * lineH, 2, scale, col, row);
     }
 
     if (start > 0)
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.90f, listTop, 2,
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, ax, listTop, 2,
                                  scale, cDim, "^");
     if (start + visible < g_mode_count)
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.90f,
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, ax,
                                  listTop + (visible - 1) * lineH, 2, scale, cDim, "v");
 
-    {
-        char foot[96];
-        snprintf(foot, sizeof(foot),
-                 "Up/Down move   L1/R1 page   X select   ('*' = active)");
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.06f, H * 0.93f, 2,
-                                 scale * 0.85f, cFoot, foot);
-    }
+    gsKit_fontm_print_scaled(gsGlobal, gsFontM, x, H * 0.93f, 2,
+                             scale, cFoot, "Up/Down move  L1/R1 page  X select");
 
     gsKit_queue_exec(gsGlobal);
     gsKit_sync_flip(gsGlobal);
@@ -170,18 +184,18 @@ static void draw_bars(int active, int level_idx, int show_hud)
     smpte_draw(gsGlobal, lvl);
 
     if (show_hud) {
-        float lineH = H * 0.05f;
-        float scale = lineH / FONTM_GLYPH_H;
+        float scale = scale_for_cols(HUD_COLS);
+        float lineH = FONTM_CELL * scale;
+        float x     = W * TEXT_MARGIN;
+        float y     = H * 0.05f;
         u64   col   = GS_SETREG_RGBAQ(0x60, 0x60, 0x60, 0x80, 0x00);
         char  l1[64], l2[64];
 
         snprintf(l1, sizeof(l1), "%s  (%s)", m->name, m->signal);
         snprintf(l2, sizeof(l2), "%s   O=menu", lvl->name);
 
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.04f, H * 0.05f, 2,
-                                 scale, col, l1);
-        gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.04f, H * 0.05f + lineH, 2,
-                                 scale, col, l2);
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, x, y, 2, scale, col, l1);
+        gsKit_fontm_print_scaled(gsGlobal, gsFontM, x, y + lineH, 2, scale, col, l2);
     }
 
     gsKit_queue_exec(gsGlobal);
