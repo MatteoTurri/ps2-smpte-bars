@@ -16,6 +16,8 @@
 #include <loadfile.h>
 #include <libpad.h>
 
+#include <rom0_info.h>
+
 #include <gsKit.h>
 #include <dmaKit.h>
 #include <gsToolkit.h>
@@ -41,6 +43,43 @@ void gsKit_vsync_wait(void)
     u32 t = 0;
     *GS_CSR = *GS_CSR & 8;
     while (!(*GS_CSR & 8) && ++t < VSYNC_TIMEOUT) { }
+}
+
+/* Native 576p (SetGsCrt mode 0x53) was added to the PS2 BIOS in ROM v1.80.
+ * On older consoles SetGsCrt(0x53) sets no valid timing, so the GS produces no
+ * vsync and 576p hangs/black-screens. We detect the ROM version and, when it is
+ * older than 1.80, drive the PCRTC timing registers directly with the values GS
+ * Mode Selector uses. gsKit's DISPLAY/DISPFB (DW=1280, MagH=1 for our 640-wide
+ * framebuffer) are already correct, so only the analog timing needs poking. */
+#define GS_REG(off) (*(volatile u64 *)(0x12000000 + (off)))
+
+static int g_rom_ver = 0;   /* e.g. 170 == ROM 1.70; < 180 lacks native 576p */
+
+static int read_rom_version(void)
+{
+    char rn[16];
+    int i;
+    GetRomName(rn);             /* "VVVVRTYYYYMMDD", 14 chars, not terminated */
+    for (i = 0; i < 4; i++)
+        if (rn[i] < '0' || rn[i] > '9')
+            return 0;           /* unparsable -> treat as old (safe to poke) */
+    return (rn[0]-'0')*1000 + (rn[1]-'0')*100 + (rn[2]-'0')*10 + (rn[3]-'0');
+}
+
+static void force_576p_timing(void)
+{
+    volatile int sink = 0;
+    int i;
+    GS_REG(0x10) = 0x00000017424B0504ULL;  /* SMODE1 */
+    GS_REG(0x40) = 0x000402E02003C827ULL;  /* SYNCH1 */
+    GS_REG(0x50) = 0x0019CA67ULL;          /* SYNCH2 */
+    GS_REG(0x60) = 0x00A9000002700005ULL;  /* SYNCV  (576p @50Hz) */
+    GS_REG(0x20) = 0x0ULL;                 /* SMODE2 progressive    */
+    GS_REG(0x30) = 0x4ULL;                 /* SRFSH  */
+    GS_REG(0x10) = 0x0000001742490504ULL;  /* SMODE1 PLL program     */
+    for (i = 0; i < 500000; i++) sink = i; /* let the PLL settle     */
+    GS_REG(0x10) = 0x0000001742480504ULL;  /* SMODE1 release PLL reset */
+    (void)sink;
 }
 
 /* FontM renders a fixed 26x26 monospace cell at scale 1.0: both the per-glyph
@@ -108,6 +147,10 @@ static void apply_mode(int idx)
     gsKit_init_screen(gsGlobal);
     gsKit_mode_switch(gsGlobal, GS_ONESHOT);
     gsKit_set_test(gsGlobal, GS_ATEST_OFF);
+
+    /* On pre-1.80 ROMs the BIOS can't set up 576p: drive the PCRTC ourselves. */
+    if (m->mode == GS_MODE_DTV_576P && g_rom_ver < 180)
+        force_576p_timing();
 
     /* The font texture lives in VRAM, which we just cleared: re-upload it. */
     gsKit_fontm_upload(gsGlobal, gsFontM);
@@ -238,6 +281,8 @@ int main(int argc, char *argv[])
 
     load_pad_modules();
     pad_init();
+
+    g_rom_ver = read_rom_version();
 
     gsGlobal = gsKit_init_global();
     dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,

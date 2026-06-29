@@ -26,6 +26,16 @@ Notes:
 - **VGA modes** are RGBHV (separate H/V sync): they need a suitable cable and an
   input that accepts them (e.g. the RetroTink 4K analog port).
 
+**576p on older consoles:** native 576p (`SetGsCrt` mode `0x53`) was only added
+to the PS2 BIOS in ROM v1.80. On earlier consoles (most fat models, e.g.
+SCPH-30000/50000) the BIOS sets no valid 576p timing, so the GS produces no
+vsync and the mode would hang. This program reads the ROM version at boot and,
+when it is older than 1.80, programs the GS PCRTC timing registers directly
+(the values used by GS Mode Selector) so 576p works anyway. Consoles with ROM
+≥ 1.80 use the native path unchanged. A bounded vsync wait is also in place as a
+safety net, so a non-syncing mode can never hard-lock the console — Triangle
+always recovers.
+
 The cable tag shown in the HUD (`any cable` / `component` / `VGA RGBHV`) is a
 **hint for which cable you need**, not a detected signal — the PS2 emits
 composite/S-Video/RGB/YPbPr simultaneously and cannot know which one you plugged
