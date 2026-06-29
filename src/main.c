@@ -82,6 +82,8 @@ static void apply_mode(int idx)
     gsGlobal->ZBuffering      = GS_SETTING_OFF;
     gsGlobal->DoubleBuffering = m->dbuf;
     gsGlobal->Dithering       = GS_SETTING_OFF;   /* exact, deterministic levels */
+    gsGlobal->PrimAlphaEnable = GS_SETTING_OFF;   /* no blending: write colors verbatim */
+    gsGlobal->PrimAAEnable    = GS_SETTING_OFF;   /* no AA on bar edges */
 
     gsKit_vram_clear(gsGlobal);
     gsKit_init_screen(gsGlobal);
@@ -303,6 +305,10 @@ int main(int argc, char *argv[])
             else
                 draw_bars(active, level_idx, show_hud);
             redraw--;
+        } else {
+            /* Nothing changed: just pace at vsync. Both buffers already hold
+             * identical content, so this flip shows no visible change. */
+            gsKit_sync_flip(gsGlobal);
         }
     }
 
