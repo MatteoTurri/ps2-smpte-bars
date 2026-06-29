@@ -19,8 +19,9 @@
  * Every output the PS2 Graphics Synthesizer can drive, grouped by signal type.
  *
  * 240p / 288p are produced natively by setting the SDTV modes non-interlaced
- * (no PS1 backwards-compatibility needed). 480i/576i use FRAME so the full
- * vertical resolution is shown (static pattern -> no interlace flicker).
+ * (no PS1 backwards-compatibility needed). 480i/576i use FIELD (gsKit's own
+ * working default): with FRAME, gsKit does `MagV--` for interlaced modes, which
+ * underflows our MagV to -1 and corrupts the vertical scaling.
  *
  * HD (480p..1080i) is YPbPr-only out of the multi-AV connector.
  * 1080i does not fit VRAM at 32-bit, so it is a single 1920x540 field at 16-bit.
@@ -32,8 +33,8 @@ const VideoMode g_modes[] = {
     /* --- SDTV ------------------------------------------------------------ */
     { "240p (NTSC)", SD_SIGNAL, GS_MODE_NTSC, NI, FRAME,  640, 224, GS_PSM_CT32, ON },
     { "288p (PAL)",  SD_SIGNAL, GS_MODE_PAL,  NI, FRAME,  640, 256, GS_PSM_CT32, ON },
-    { "480i (NTSC)", SD_SIGNAL, GS_MODE_NTSC, I,  FRAME,  640, 448, GS_PSM_CT32, ON },
-    { "576i (PAL)",  SD_SIGNAL, GS_MODE_PAL,  I,  FRAME,  640, 512, GS_PSM_CT32, ON },
+    { "480i (NTSC)", SD_SIGNAL, GS_MODE_NTSC, I,  FIELD,  640, 448, GS_PSM_CT32, ON },
+    { "576i (PAL)",  SD_SIGNAL, GS_MODE_PAL,  I,  FIELD,  640, 512, GS_PSM_CT32, ON },
 
     /* --- HD / DTV (component) ------------------------------------------- */
     { "480p",            HD_SIGNAL, GS_MODE_DTV_480P,  NI, FRAME,  640,  480, GS_PSM_CT32, ON  },
