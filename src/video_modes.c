@@ -1,8 +1,12 @@
 #include "video_modes.h"
 
-#define SD_SIGNAL  "Composite / S-Video / RGB / Component"
-#define HD_SIGNAL  "Component YPbPr only"
-#define VGA_SIGNAL "VGA RGBHV (progressive)"
+/* Recommended/required cable for the mode. NOTE: this is a hint, not a probe:
+ * the PS2 multi-AV connector carries composite, S-Video, RGB and YPbPr at the
+ * same time on different pins, so what actually reaches the scaler depends on
+ * the cable you plugged in. The software cannot detect that. */
+#define SD_SIGNAL  "any cable"
+#define HD_SIGNAL  "component"
+#define VGA_SIGNAL "VGA RGBHV"
 
 #define ON  GS_SETTING_ON
 #define OFF GS_SETTING_OFF

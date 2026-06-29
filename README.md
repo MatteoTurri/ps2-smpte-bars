@@ -26,6 +26,11 @@ Notes:
 - **VGA modes** are RGBHV (separate H/V sync): they need a suitable cable and an
   input that accepts them (e.g. the RetroTink 4K analog port).
 
+The cable tag shown in the HUD (`any cable` / `component` / `VGA RGBHV`) is a
+**hint for which cable you need**, not a detected signal — the PS2 emits
+composite/S-Video/RGB/YPbPr simultaneously and cannot know which one you plugged
+in.
+
 ### Color precision (matters for calibration)
 
 Almost every mode uses a **32-bit framebuffer (8 bits/channel)**, so peak white

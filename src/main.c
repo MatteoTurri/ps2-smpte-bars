@@ -173,11 +173,10 @@ static void draw_bars(int active, int level_idx, int show_hud)
         float lineH = H * 0.05f;
         float scale = lineH / FONTM_GLYPH_H;
         u64   col   = GS_SETREG_RGBAQ(0x60, 0x60, 0x60, 0x80, 0x00);
-        char  l1[80], l2[80];
+        char  l1[64], l2[64];
 
-        snprintf(l1, sizeof(l1), "[%d/%d] %s", active + 1, g_mode_count, m->name);
-        snprintf(l2, sizeof(l2), "%s | %s | O=menu  X=levels  Select=HUD",
-                 m->signal, lvl->name);
+        snprintf(l1, sizeof(l1), "%s  (%s)", m->name, m->signal);
+        snprintf(l2, sizeof(l2), "%s   O=menu", lvl->name);
 
         gsKit_fontm_print_scaled(gsGlobal, gsFontM, W * 0.04f, H * 0.05f, 2,
                                  scale, col, l1);

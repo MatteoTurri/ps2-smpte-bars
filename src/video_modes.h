@@ -19,8 +19,8 @@
  *       buffers; harmless for a static image.
  */
 typedef struct {
-    const char *name;    /* short label shown in the HUD            */
-    const char *signal;  /* cable / signal hint                     */
+    const char *name;    /* short label shown in the menu/HUD       */
+    const char *signal;  /* required-cable hint (NOT a detected signal) */
     s16  mode;           /* GS_MODE_*                               */
     s16  interlace;      /* GS_INTERLACED / GS_NONINTERLACED        */
     s16  field;          /* GS_FIELD / GS_FRAME                     */
